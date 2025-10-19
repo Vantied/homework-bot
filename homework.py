@@ -1,9 +1,9 @@
 import logging
 import os
 import sys
-import requests
 import time
 
+import requests
 from dotenv import load_dotenv
 from telebot import TeleBot
 import exceptions_customs

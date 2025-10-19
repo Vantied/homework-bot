@@ -12,11 +12,3 @@ class BadEndpoint(Exception):
     def __init__(self, message: str):
         """Инициализация."""
         super().__init__(message)
-
-
-class BadWork(Exception):
-    """Общая ошибка в работе основной функции main."""
-
-    def __init__(self, message: str):
-        """Инициализация."""
-        super().__init__(message)

@@ -6,7 +6,7 @@ import time
 import requests
 from dotenv import load_dotenv
 from telebot import TeleBot
-import exceptions_customs
+import exceptions
 
 
 load_dotenv()
@@ -69,7 +69,7 @@ def send_message(bot, message):
         logger.debug(f'Успешное отправление сообщения {message}')
     except Exception as error:
         logger.debug(f'Не получилось отправить сообщение: {error}')
-        raise exceptions_customs.SendingFailed(
+        raise exceptions.SendingFailed(
             f'Не получилось отправить сообщение {error}'
         )
 
@@ -84,13 +84,13 @@ def get_api_answer(timestamp):
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
     except requests.RequestException as error:
         logger.error(f'Сбой при запросе к эндпоинту {ENDPOINT} {error}')
-        raise exceptions_customs.ApiRequestError(
+        raise exceptions.ApiRequestError(
             f'Ошибка при запросе API {error}'
         )
 
     if response.status_code != 200:
         logger.error(f'Недоступность эндпоинта: {ENDPOINT}')
-        raise exceptions_customs.BadEndpoint(
+        raise exceptions.BadEndpoint(
             f'Эндпоинт недоступен. Код ответа: {response.status_code}'
         )
 

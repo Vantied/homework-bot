@@ -2,10 +2,12 @@ import logging
 import os
 import sys
 import time
+import json
 
 import requests
 from dotenv import load_dotenv
 from telebot import TeleBot
+from telebot import apihelper
 import exceptions
 
 
@@ -39,21 +41,12 @@ logger.addHandler(handler)
 def check_tokens():
     """
     Функция для проверки доступности переменных окружений.
-    Проверяет все переменные, и если хоть одного нет, то вернёт False.
-    Если все переменные есть, то вернёт True.
-    Напишет в логах все недостающие переменные.
+    Вернёт список пропущенных токенов.
+    Если нет пропущенных токенов, вернёт пустой список.
     """
-    tokens = {
-        'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
-        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
-        'TELEGRAM_TOKEN': TELEGRAM_TOKEN
-    }
-    missing_tokens = [name for name, token in tokens.items() if not token]
-    if missing_tokens:
-        for name in missing_tokens:
-            logger.critical(f'Отсутсвует ключ {name}')
-        return False
-    return True
+    tokens = ['PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID']
+    missing_tokens = [key for key in tokens if not globals().get(f'{key}')]
+    return missing_tokens
 
 
 def send_message(bot, message):
@@ -66,12 +59,10 @@ def send_message(bot, message):
             chat_id=TELEGRAM_CHAT_ID,
             text=f'{message}'
         )
-        logger.debug(f'Успешное отправление сообщения {message}')
-    except Exception as error:
+    except apihelper.ApiTelegramException as error:
         logger.debug(f'Не получилось отправить сообщение: {error}')
-        raise exceptions.SendingFailed(
-            f'Не получилось отправить сообщение {error}'
-        )
+    else:
+        logger.debug(f'Успешное отправление сообщения {message}')
 
 
 def get_api_answer(timestamp):
@@ -83,64 +74,82 @@ def get_api_answer(timestamp):
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
     except requests.RequestException as error:
-        logger.error(f'Сбой при запросе к эндпоинту {ENDPOINT} {error}')
         raise exceptions.ApiRequestError(
             f'Ошибка при запросе API {error}'
         )
 
     if response.status_code != 200:
-        logger.error(f'Недоступность эндпоинта: {ENDPOINT}')
-        raise exceptions.BadEndpoint(
+        raise exceptions.BadEndPoint(
             f'Эндпоинт недоступен. Код ответа: {response.status_code}'
         )
 
-    return response.json()
+    try:
+        response = response.json()
+        return response
+    except json.decoder.JSONDecodeError as error:
+        raise exceptions.InvalidJSONResponse(
+            f'Ошибка при разборе JSON ответа от API: {error}'
+        )
 
 
 def check_response(response):
     """
     Функция проверяет соответствие документации.
-    Выбросит исключение если не будет ответ не будет совподать с документацией.
-    Напишет об проблемах в логах.
+    Выбросит исключение если не будет ответ совподать с документацией.
     """
     # Проверяется, что response действительно словарь
     if not isinstance(response, dict):
-        logger.error('Отсутвие получние словаря при запросе к API')
         raise TypeError('Ответ не является словарём')
     # Проверка наличия ключа 'homeworks'
     if 'homeworks' not in response:
-        logger.error('Отсутсвует ключ "homeworks"')
         raise KeyError('Отсутсвует ключ "homeworks"')
     # Проверяется, что homeworks список
     if not isinstance(response.get('homeworks'), list):
-        logger.error('"homeworks" должен быть списком')
         raise TypeError('"homeworks" должен быть списком')
+    # Проверяется, что current_date есть
+    if 'current_date' not in response:
+        logger.debug('Ключ "current_date" отсутствует в ответе от API.')
+    else:
+        current_date = response.get('current_date')
+        # Проверяется, что current_date это int
+        if not isinstance(current_date, int):
+            logger.debug('"current_date" должен быть int')
 
 
 def parse_status(homework):
     """
     Извлекает статус одной домашней работы.
-    Возвращает сообщение
+    Возвращает сообщение.
     """
     if homework.get('homework_name') is None:
-        logger.error('Отсутвсует ключ "homework_name"')
         raise KeyError('Отсутвсует ключ "homework_name"')
     # Получение ключей
     homework_name = homework.get('homework_name')
     status = homework.get('status')
     # Проверка известных статусов
     if status not in HOMEWORK_VERDICTS:
-        logger.error(
-            f'Неожиданный статус домашней работы: {status}'
-        )
         raise ValueError(f'Неизвестный статус: {status}')
     verdict = HOMEWORK_VERDICTS.get(f'{status}')
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
+def send_messange_if_change(bot, message, last_message):
+    """
+    Отправка сообщения только если оно отличается от последнего.
+    Возвращает новое значение последнего сообщения.
+    """
+    if message != last_message:
+        send_message(bot, message)
+    return message
+
+
 def main():
     """Основная логика работы бота."""
-    if not check_tokens():
+    missing_tokens = check_tokens()
+    if missing_tokens:
+        logger.critical(
+            f'Отсутсвуют переменные окружения: {", ".join(missing_tokens)}'
+        )
         raise SystemExit('Отсутвуют переменные окружения')
 
     # Создаем объект класса бота
@@ -161,9 +170,9 @@ def main():
             if homeworks:
                 homework = homeworks[0]
                 message = parse_status(homework)
-                if message != last_message:
-                    send_message(bot, message)
-                    last_message = message
+                last_message = send_messange_if_change(
+                    bot, message, last_message
+                )
             else:
                 logger.debug(
                     'В ответе API получен пустой список домашних работ'
@@ -172,17 +181,12 @@ def main():
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            if message != last_error_message:
-                try:
-                    send_message(bot, message)
-                    last_error_message = message
-                    logger.info('Отправлено уведомление об ошибке')
-                except Exception as error:
-                    logger.error(
-                        f'Не удалось отправить сообщение об ошибке: {error}'
-                    )
-
-        time.sleep(RETRY_PERIOD)
+            logger.error(message)
+            last_error_message = send_messange_if_change(
+                bot, message, last_error_message
+            )
+        finally:
+            time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':

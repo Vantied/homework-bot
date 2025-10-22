@@ -1,14 +1,22 @@
 class SendingFailed(Exception):
     """Ошибка при отправке сообщения в Telegram."""
 
-    def __init__(self, message: str):
-        """Инициализация."""
-        super().__init__(message)
+    pass
 
 
-class BadEndpoint(Exception):
+class BadEndPoint(Exception):
     """Эндпоинт API недоступен или вернул некорректный ответ."""
 
-    def __init__(self, message: str):
-        """Инициализация."""
-        super().__init__(message)
+    pass
+
+
+class InvalidJSONResponse(Exception):
+    """Ошибка при парсинге ответа от API."""
+
+    pass
+
+
+class ApiRequestError(Exception):
+    """Ошибка, возникающее при ошибке запроса к API."""
+
+    pass

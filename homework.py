@@ -45,7 +45,7 @@ def check_tokens():
     Если нет пропущенных токенов, вернёт пустой список.
     """
     tokens = ['PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID']
-    missing_tokens = [key for key in tokens if not globals().get(f'{key}')]
+    missing_tokens = [key for key in tokens if not globals().get(key)]
     return missing_tokens
 
 
@@ -59,8 +59,8 @@ def send_message(bot, message):
             chat_id=TELEGRAM_CHAT_ID,
             text=f'{message}'
         )
-    except apihelper.ApiTelegramException as error:
-        logger.debug(f'Не получилось отправить сообщение: {error}')
+    except apihelper.ApiException as error:
+        logger.error(f'Не получилось отправить сообщение: {error}')
     else:
         logger.debug(f'Успешное отправление сообщения {message}')
 
@@ -73,19 +73,15 @@ def get_api_answer(timestamp):
     payload = {'from_date': timestamp}
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
+        if response.status_code != 200:
+            raise exceptions.BadEndPoint(
+                f'Эндпоинт недоступен. Код ответа: {response.status_code}'
+            )
+        return response.json()
+
     except requests.RequestException as error:
-        raise exceptions.ApiRequestError(
-            f'Ошибка при запросе API {error}'
-        )
+        raise exceptions.ApiRequestError(f'Ошибка при запросе API: {error}')
 
-    if response.status_code != 200:
-        raise exceptions.BadEndPoint(
-            f'Эндпоинт недоступен. Код ответа: {response.status_code}'
-        )
-
-    try:
-        response = response.json()
-        return response
     except json.decoder.JSONDecodeError as error:
         raise exceptions.InvalidJSONResponse(
             f'Ошибка при разборе JSON ответа от API: {error}'
@@ -108,12 +104,16 @@ def check_response(response):
         raise TypeError('"homeworks" должен быть списком')
     # Проверяется, что current_date есть
     if 'current_date' not in response:
-        logger.debug('Ключ "current_date" отсутствует в ответе от API.')
+        raise exceptions.ResponseStructureError(
+            'Ключ "current_date" отсутствует в ответе от API'
+        )
     else:
         current_date = response.get('current_date')
         # Проверяется, что current_date это int
         if not isinstance(current_date, int):
-            logger.debug('"current_date" должен быть int')
+            raise exceptions.ResponseStructureError(
+                '"current_date" должен быть int'
+            )
 
 
 def parse_status(homework):
@@ -157,8 +157,6 @@ def main():
     timestamp = int(time.time())
     # Переменная, сохраняет предыдущий статус, чтобы его заново не оптравлять
     last_message = ''
-    # Переменная, сохраняет предыдущую ошибку, чтобы его заново не оптравлять
-    last_error_message = ''
 
     while True:
         try:
@@ -179,11 +177,14 @@ def main():
                 )
             timestamp = response.get('current_date', timestamp)
 
+        except exceptions.ResponseStructureError as error:
+            logger.error(error)
+
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
-            last_error_message = send_messange_if_change(
-                bot, message, last_error_message
+            last_message = send_messange_if_change(
+                bot, message, last_message
             )
         finally:
             time.sleep(RETRY_PERIOD)

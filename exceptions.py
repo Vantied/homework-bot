@@ -1,9 +1,3 @@
-class SendingFailed(Exception):
-    """Ошибка при отправке сообщения в Telegram."""
-
-    pass
-
-
 class BadEndPoint(Exception):
     """Эндпоинт API недоступен или вернул некорректный ответ."""
 
@@ -17,6 +11,12 @@ class InvalidJSONResponse(Exception):
 
 
 class ApiRequestError(Exception):
-    """Ошибка, возникающее при ошибке запроса к API."""
+    """Ошибка, возникающая при ошибке запроса к API."""
+
+    pass
+
+
+class ResponseStructureError(Exception):
+    """Ошибка, возникающая при нарушении структуры ответа."""
 
     pass
